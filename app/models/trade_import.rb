@@ -16,12 +16,12 @@ class TradeImport < Import
           exchange_operating_mic: row.exchange_operating_mic
         )
 
-        Trade.new(
+        Account::Trade.new(
           security: security,
           qty: row.qty,
           currency: row.currency.presence || mapped_account.currency,
           price: row.price,
-          entry: Entry.new(
+          entry: Account::Entry.new(
             account: mapped_account,
             date: row.date_iso,
             amount: row.signed_amount,
@@ -31,8 +31,7 @@ class TradeImport < Import
           ),
         )
       end
-
-      Trade.import!(trades, recursive: true)
+      Account::Trade.import!(trades, recursive: true)
     end
   end
 
@@ -76,25 +75,42 @@ class TradeImport < Import
   end
 
   private
-    def find_or_create_security(ticker: nil, exchange_operating_mic: nil)
-      return nil unless ticker.present?
+    def find_or_create_security(ticker:, exchange_operating_mic:)
+      # Normalize empty string to nil for consistency
+      exchange_operating_mic = nil if exchange_operating_mic.blank?
 
-      # Avoids resolving the same security over and over again (resolver potentially makes network calls)
-      @security_cache ||= {}
+      # First try to find an exact match in our DB, or if no exchange_operating_mic is provided, find by ticker only
+      internal_security = if exchange_operating_mic.present?
+        Security.find_by(ticker:, exchange_operating_mic:)
+      else
+        Security.find_by(ticker:)
+      end
 
-      cache_key = [ ticker, exchange_operating_mic ].compact.join(":")
+      return internal_security if internal_security.present?
 
-      security = @security_cache[cache_key]
+      # If security prices provider isn't properly configured or available, create with nil exchange_operating_mic
+      return Security.find_or_create_by!(ticker: ticker, exchange_operating_mic: nil) unless Security.provider.present?
 
-      return security if security.present?
+      # Cache provider responses so that when we're looping through rows and importing,
+      # we only hit our provider for the unique combinations of ticker / exchange_operating_mic
+      cache_key = [ ticker, exchange_operating_mic ]
+      @provider_securities_cache ||= {}
 
-      security = Security::Resolver.new(
-        ticker,
-        exchange_operating_mic: exchange_operating_mic.presence
-      ).resolve
+      provider_security = @provider_securities_cache[cache_key] ||= begin
+        Security.search_provider(
+          ticker,
+          exchange_operating_mic: exchange_operating_mic
+        ).first
+      end
 
-      @security_cache[cache_key] = security
+      return Security.find_or_create_by!(ticker: ticker, exchange_operating_mic: nil) if provider_security.nil?
 
-      security
+      Security.find_or_create_by!(ticker: provider_security[:ticker], exchange_operating_mic: provider_security[:exchange_operating_mic]) do |security|
+        security.name = provider_security[:name]
+        security.country_code = provider_security[:country_code]
+        security.logo_url = provider_security[:logo_url]
+        security.exchange_acronym = provider_security[:exchange_acronym]
+        security.exchange_mic = provider_security[:exchange_mic]
+      end
     end
 end

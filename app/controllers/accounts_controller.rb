@@ -26,6 +26,14 @@ class AccountsController < ApplicationController
     render layout: false
   end
 
+  def sync_all
+    unless family.syncing?
+      family.sync_later
+    end
+
+    redirect_to accounts_path
+  end
+
   private
     def family
       Current.family

@@ -1,19 +1,18 @@
 class OnboardingsController < ApplicationController
-  layout "wizard"
-
   before_action :set_user
   before_action :load_invitation
 
   def show
   end
 
+  def profile
+  end
+
   def preferences
   end
 
-  def trial
-  end
-
   private
+
     def set_user
       @user = Current.user
     end

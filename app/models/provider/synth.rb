@@ -3,8 +3,6 @@ class Provider::Synth < Provider
 
   # Subclass so errors caught in this provider are raised as Provider::Synth::Error
   Error = Class.new(Provider::Error)
-  InvalidExchangeRateError = Class.new(Error)
-  InvalidSecurityPriceError = Class.new(Error)
 
   def initialize(api_key)
     @api_key = api_key
@@ -50,7 +48,7 @@ class Provider::Synth < Provider
 
       rates = JSON.parse(response.body).dig("data", "rates")
 
-      Rate.new(date: date.to_date, from:, to:, rate: rates.dig(to))
+      Rate.new(date:, from:, to:, rate: rates.dig(to))
     end
   end
 
@@ -67,20 +65,8 @@ class Provider::Synth < Provider
       end
 
       data.paginated.map do |rate|
-        date = rate.dig("date")
-        rate = rate.dig("rates", to)
-
-        if date.nil? || rate.nil?
-          Rails.logger.warn("#{self.class.name} returned invalid rate data for pair from: #{from} to: #{to} on: #{date}.  Rate data: #{rate.inspect}")
-          Sentry.capture_exception(InvalidExchangeRateError.new("#{self.class.name} returned invalid rate data"), level: :warning) do |scope|
-            scope.set_context("rate", { from: from, to: to, date: date })
-          end
-
-          next
-        end
-
-        Rate.new(date: date.to_date, from:, to:, rate:)
-      end.compact
+        Rate.new(date: rate.dig("date"), from:, to:, rate: rate.dig("rates", to))
+      end
     end
   end
 
@@ -94,8 +80,7 @@ class Provider::Synth < Provider
         req.params["name"] = symbol
         req.params["dataset"] = "limited"
         req.params["country_code"] = country_code if country_code.present?
-        # Synth uses mic_code, which encompasses both exchange_mic AND exchange_operating_mic (union)
-        req.params["mic_code"] = exchange_operating_mic if exchange_operating_mic.present?
+        req.params["exchange_operating_mic"] = exchange_operating_mic if exchange_operating_mic.present?
         req.params["limit"] = 25
       end
 
@@ -107,86 +92,104 @@ class Provider::Synth < Provider
           name: security.dig("name"),
           logo_url: security.dig("logo_url"),
           exchange_operating_mic: security.dig("exchange", "operating_mic_code"),
-          country_code: security.dig("exchange", "country_code")
         )
       end
     end
   end
 
-  def fetch_security_info(symbol:, exchange_operating_mic:)
+  def fetch_security_info(security)
     with_provider_response do
-      response = client.get("#{base_url}/tickers/#{symbol}") do |req|
-        req.params["operating_mic"] = exchange_operating_mic
+      response = client.get("#{base_url}/tickers/#{security.ticker}") do |req|
+        req.params["mic_code"] = security.exchange_mic if security.exchange_mic.present?
+        req.params["operating_mic"] = security.exchange_operating_mic if security.exchange_operating_mic.present?
       end
 
       data = JSON.parse(response.body).dig("data")
 
       SecurityInfo.new(
-        symbol: symbol,
+        symbol: data.dig("ticker"),
         name: data.dig("name"),
         links: data.dig("links"),
         logo_url: data.dig("logo_url"),
         description: data.dig("description"),
-        kind: data.dig("kind"),
-        exchange_operating_mic: exchange_operating_mic
+        kind: data.dig("kind")
       )
     end
   end
 
-  def fetch_security_price(symbol:, exchange_operating_mic: nil, date:)
+  def fetch_security_price(security, date:)
     with_provider_response do
-      historical_data = fetch_security_prices(symbol:, exchange_operating_mic:, start_date: date, end_date: date)
+      historical_data = fetch_security_prices(security, start_date: date, end_date: date)
 
-      raise ProviderError, "No prices found for security #{symbol} on date #{date}" if historical_data.data.empty?
+      raise ProviderError, "No prices found for security #{security.ticker} on date #{date}" if historical_data.data.empty?
 
       historical_data.data.first
     end
   end
 
-  def fetch_security_prices(symbol:, exchange_operating_mic: nil, start_date:, end_date:)
+  def fetch_security_prices(security, start_date:, end_date:)
     with_provider_response do
       params = {
         start_date: start_date,
-        end_date: end_date,
-        operating_mic_code: exchange_operating_mic
-      }.compact
+        end_date: end_date
+      }
+
+      params[:operating_mic_code] = security.exchange_operating_mic if security.exchange_operating_mic.present?
 
       data = paginate(
-        "#{base_url}/tickers/#{symbol}/open-close",
+        "#{base_url}/tickers/#{security.ticker}/open-close",
         params
       ) do |body|
         body.dig("prices")
       end
 
       currency = data.first_page.dig("currency")
+      country_code = data.first_page.dig("exchange", "country_code")
+      exchange_mic = data.first_page.dig("exchange", "mic_code")
       exchange_operating_mic = data.first_page.dig("exchange", "operating_mic_code")
 
       data.paginated.map do |price|
-        date = price.dig("date")
-        price = price.dig("close") || price.dig("open")
-
-        if date.nil? || price.nil?
-          Rails.logger.warn("#{self.class.name} returned invalid price data for security #{symbol} on: #{date}.  Price data: #{price.inspect}")
-          Sentry.capture_exception(InvalidSecurityPriceError.new("#{self.class.name} returned invalid security price data"), level: :warning) do |scope|
-            scope.set_context("security", { symbol: symbol, date: date })
-          end
-
-          next
-        end
-
         Price.new(
-          symbol: symbol,
-          date: date.to_date,
-          price: price,
-          currency: currency,
-          exchange_operating_mic: exchange_operating_mic
+          security: security,
+          date: price.dig("date"),
+          price: price.dig("close") || price.dig("open"),
+          currency: currency
         )
-      end.compact
+      end
+    end
+  end
+
+  # ================================
+  #           Transactions
+  # ================================
+
+  def enrich_transaction(description, amount: nil, date: nil, city: nil, state: nil, country: nil)
+    with_provider_response do
+      params = {
+        description: description,
+        amount: amount,
+        date: date,
+        city: city,
+        state: state,
+        country: country
+      }.compact
+
+      response = client.get("#{base_url}/enrich", params)
+
+      parsed = JSON.parse(response.body)
+
+      TransactionEnrichmentData.new(
+        name: parsed.dig("merchant"),
+        icon_url: parsed.dig("icon"),
+        category: parsed.dig("category")
+      )
     end
   end
 
   private
     attr_reader :api_key
+
+    TransactionEnrichmentData = Data.define(:name, :icon_url, :category)
 
     def base_url
       ENV["SYNTH_URL"] || "https://api.synthfinance.com"

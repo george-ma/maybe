@@ -14,10 +14,6 @@ export default class extends Controller {
     this.refreshWithParam("currency", event.target.value);
   }
 
-  setTheme(event) {
-    document.documentElement.setAttribute("data-theme", event.target.value);
-  }
-
   refreshWithParam(key, value) {
     const url = new URL(window.location);
     url.searchParams.set(key, value);

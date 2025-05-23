@@ -1,5 +1,4 @@
 require "sidekiq/web"
-require "sidekiq/cron/web"
 
 Rails.application.routes.draw do
   # MFA routes
@@ -8,8 +7,6 @@ Rails.application.routes.draw do
     post :verify, to: "mfa#verify_code"
     delete :disable
   end
-
-  mount Lookbook::Engine, at: "/design-system"
 
   # Uses basic auth - see config/initializers/sidekiq.rb
   mount Sidekiq::Web => "/sidekiq"
@@ -25,8 +22,7 @@ Rails.application.routes.draw do
 
   get "changelog", to: "pages#changelog"
   get "feedback", to: "pages#feedback"
-
-  resource :current_session, only: %i[update]
+  get "early-access", to: "pages#early_access"
 
   resource :registration, only: %i[new create]
   resources :sessions, only: %i[new create destroy]
@@ -36,14 +32,12 @@ Rails.application.routes.draw do
 
   resources :users, only: %i[update destroy] do
     delete :reset, on: :member
-    patch :rule_prompt_settings, on: :member
   end
 
   resource :onboarding, only: :show do
     collection do
+      get :profile
       get :preferences
-      get :goals
-      get :trial
     end
   end
 
@@ -57,16 +51,8 @@ Rails.application.routes.draw do
     resource :security, only: :show
   end
 
-  resource :subscription, only: %i[new show create] do
-    collection do
-      get :upgrade
-      get :success
-    end
-  end
-
   resources :tags, except: :show do
     resources :deletions, only: %i[new create], module: :tag
-    delete :destroy_all, on: :collection
   end
 
   namespace :category do
@@ -77,7 +63,6 @@ Rails.application.routes.draw do
     resources :deletions, only: %i[new create], module: :category
 
     post :bootstrap, on: :collection
-    delete :destroy_all, on: :collection
   end
 
   resources :budgets, only: %i[index show edit update], param: :month_year do
@@ -86,7 +71,7 @@ Rails.application.routes.draw do
     resources :budget_categories, only: %i[index show update]
   end
 
-  resources :family_merchants, only: %i[index new create edit update destroy]
+  resources :merchants, only: %i[index new create edit update destroy]
 
   resources :transfers, only: %i[new create destroy show update]
 
@@ -106,7 +91,11 @@ Rails.application.routes.draw do
     resources :mappings, only: :update, module: :import
   end
 
-  resources :accounts, only: %i[index new], shallow: true do
+  resources :accounts, only: %i[index new] do
+    collection do
+      post :sync_all
+    end
+
     member do
       post :sync
       get :chart
@@ -114,42 +103,39 @@ Rails.application.routes.draw do
     end
   end
 
-  resources :holdings, only: %i[index new show destroy]
-  resources :trades, only: %i[show new create update destroy]
-  resources :valuations, only: %i[show new create update destroy]
-
-  namespace :transactions do
-    resource :bulk_deletion, only: :create
-    resource :bulk_update, only: %i[new create]
-  end
-
-  resources :transactions, only: %i[index new create show update destroy] do
-    resource :transfer_match, only: %i[new create]
-    resource :category, only: :update, controller: :transaction_categories
-
-    collection do
-      delete :clear_filter
-    end
-  end
-
   resources :accountable_sparklines, only: :show, param: :accountable_type
 
-  direct :entry do |entry, options|
+  namespace :account do
+    resources :holdings, only: %i[index new show destroy]
+
+    resources :transactions, only: %i[show new create update destroy] do
+      resource :transfer_match, only: %i[new create]
+      resource :category, only: :update, controller: :transaction_categories
+
+      collection do
+        post "bulk_delete"
+        get "bulk_edit"
+        post "bulk_update"
+        post "mark_transfers"
+        post "unmark_transfers"
+      end
+    end
+
+    resources :valuations, only: %i[show new create update destroy]
+    resources :trades, only: %i[show new create update destroy]
+  end
+
+  direct :account_entry do |entry, options|
     if entry.new_record?
-      route_for entry.entryable_name.pluralize, options
+      route_for "account_#{entry.entryable_name.pluralize}", options
     else
       route_for entry.entryable_name, entry, options
     end
   end
 
-  resources :rules, except: :show do
-    member do
-      get :confirm
-      post :apply
-    end
-
+  resources :transactions, only: :index do
     collection do
-      delete :destroy_all
+      delete :clear_filter
     end
   end
 
@@ -212,11 +198,6 @@ Rails.application.routes.draw do
   # Render dynamic PWA files from app/views/pwa/*
   get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
   get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
-
-  get "imports/:import_id/upload/sample_csv", to: "import/uploads#sample_csv", as: :import_upload_sample_csv
-
-  get "privacy", to: redirect("https://maybefinance.com/privacy")
-  get "terms", to: redirect("https://maybefinance.com/tos")
 
   # Defines the root path route ("/")
   root "pages#dashboard"

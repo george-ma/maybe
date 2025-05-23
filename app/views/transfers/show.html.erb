@@ -1,28 +1,27 @@
-<%= render DialogComponent.new(variant: "drawer") do |dialog| %>
-  <% dialog.with_header do %>
-    <div class="space-y-1">
-      <div class="flex items-center gap-4">
-        <h3 class="font-medium">
-          <span class="text-2xl">
-            <%= format_money @transfer.amount_abs %>
-          </span>
+<%= drawer do %>
+  <header class="mb-4 space-y-1">
+    <div class="flex items-center gap-4">
+      <h3 class="font-medium">
+        <span class="text-2xl">
+          <%= format_money @transfer.amount_abs %>
+        </span>
 
-          <span class="text-lg text-secondary">
-            <%= @transfer.amount_abs.currency.iso_code %>
-          </span>
-        </h3>
+        <span class="text-lg text-secondary">
+          <%= @transfer.amount_abs.currency.iso_code %>
+        </span>
+      </h3>
 
-        <%= icon "arrow-left-right", size: "sm" %>
-      </div>
-
-      <span class="text-sm text-secondary">
-        <%= @transfer.name %>
-      </span>
+      <%= lucide_icon "arrow-left-right", class: "text-secondary mt-1 w-5 h-5" %>
     </div>
-  <% end %>
 
-  <% dialog.with_body do %>
-    <% dialog.with_section(title: t(".overview"), open: true) do %>
+    <span class="text-sm text-secondary">
+      <%= @transfer.name %>
+    </span>
+  </header>
+
+  <div class="space-y-2">
+    <!-- Overview Section -->
+    <%= disclosure t(".overview") do %>
       <div class="pb-4 px-3 pt-2 text-sm space-y-3 text-primary">
         <div class="space-y-3">
           <dl class="flex items-center gap-2 justify-between">
@@ -44,7 +43,7 @@
           </dl>
         </div>
 
-        <%= render "shared/ruler", classes: "my-2" %>
+        <div class="bg-alpha-black-100 h-px my-2"></div>
 
         <div class="space-y-3">
           <dl class="flex items-center gap-2 justify-between">
@@ -68,7 +67,8 @@
       </div>
     <% end %>
 
-    <% dialog.with_section(title: t(".details")) do %>
+    <!-- Details Section -->
+    <%= disclosure t(".details") do %>
       <%= styled_form_with model: @transfer,
               data: { controller: "auto-submit-form" }, class: "space-y-2" do |f| %>
         <% if @transfer.categorizable? %>
@@ -83,7 +83,8 @@
       <% end %>
     <% end %>
 
-    <% dialog.with_section(title: t(".settings")) do %>
+    <!-- Settings Section -->
+    <%= disclosure t(".settings") do %>
       <div class="pb-4">
         <div class="flex items-center justify-between gap-2 p-3">
           <div class="text-sm space-y-1">
@@ -100,5 +101,5 @@
         </div>
       </div>
     <% end %>
-  <% end %>
+  </div>
 <% end %>

@@ -13,10 +13,10 @@ class TransactionImport < Import
         category = mappings.categories.mappable_for(row.category)
         tags = row.tags_list.map { |tag| mappings.tags.mappable_for(tag) }.compact
 
-        Transaction.new(
+        Account::Transaction.new(
           category: category,
           tags: tags,
-          entry: Entry.new(
+          entry: Account::Entry.new(
             account: mapped_account,
             date: row.date_iso,
             amount: row.signed_amount,
@@ -28,7 +28,7 @@ class TransactionImport < Import
         )
       end
 
-      Transaction.import!(transactions, recursive: true)
+      Account::Transaction.import!(transactions, recursive: true)
     end
   end
 
@@ -46,12 +46,6 @@ class TransactionImport < Import
     base = [ Import::CategoryMapping, Import::TagMapping ]
     base << Import::AccountMapping if account.nil?
     base
-  end
-
-  def selectable_amount_type_values
-    return [] if entity_type_col_label.nil?
-
-    csv_rows.map { |row| row[entity_type_col_label] }.uniq
   end
 
   def csv_template

@@ -4,7 +4,7 @@ en:
     account:
       troubleshoot: Troubleshoot
     chart:
-      data_not_available: Data not available for the selected period
+      no_change: no change
     create:
       success: "%{type} account created"
     destroy:

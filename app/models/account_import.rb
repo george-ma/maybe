@@ -20,7 +20,7 @@ class AccountImport < Import
           currency: row.currency,
           date: Date.current,
           name: "Imported account value",
-          entryable: Valuation.new
+          entryable: Account::Valuation.new
         )
       end
     end
@@ -53,9 +53,5 @@ class AccountImport < Import
     CSV
 
     CSV.parse(template, headers: true)
-  end
-
-  def max_row_count
-    50
   end
 end

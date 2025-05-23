@@ -35,7 +35,7 @@ class MintImport < Import
           name: row.name,
           currency: row.currency,
           notes: row.notes,
-          entryable: Transaction.new(category: category, tags: tags),
+          entryable: Account::Transaction.new(category: category, tags: tags),
           import: self
 
         entry.save!

@@ -36,6 +36,8 @@ class Provider
         default_error_transformer(error)
       end
 
+      Sentry.capture_exception(transformed_error)
+
       Response.new(
         success?: false,
         data: nil,

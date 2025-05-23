@@ -37,25 +37,17 @@ module AccountableResource
 
   def create
     @account = Current.family.accounts.create_and_sync(account_params.except(:return_to))
-    @account.lock_saved_attributes!
-
     redirect_to account_params[:return_to].presence || @account, notice: t("accounts.create.success", type: accountable_type.name.underscore.humanize)
   end
 
   def update
     @account.update_with_sync!(account_params.except(:return_to))
-    @account.lock_saved_attributes!
-
     redirect_back_or_to @account, notice: t("accounts.update.success", type: accountable_type.name.underscore.humanize)
   end
 
   def destroy
-    if @account.linked?
-      redirect_to account_path(@account), alert: "Cannot delete a linked account"
-    else
-      @account.destroy_later
-      redirect_to accounts_path, notice: t("accounts.destroy.success", type: accountable_type.name.underscore.humanize)
-    end
+    @account.destroy_later
+    redirect_to accounts_path, notice: t("accounts.destroy.success", type: accountable_type.name.underscore.humanize)
   end
 
   private

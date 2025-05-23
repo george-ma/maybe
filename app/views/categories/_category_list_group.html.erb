@@ -1,14 +1,14 @@
 <%# locals: (title:, categories:) %>
 
-<div class="rounded-xl bg-container-inset space-y-1 p-1">
+<div class="rounded-xl bg-gray-25 space-y-1 p-1">
   <div class="flex items-center gap-1.5 px-4 py-2 text-xs font-medium text-secondary uppercase">
     <p><%= title %></p>
     <span class="text-subdued">&middot;</span>
     <p><%= categories.count %></p>
   </div>
 
-  <div class="shadow-border-xs rounded-lg bg-container">
-    <div class="overflow-hidden rounded-lg">
+  <div class="shadow-border-xs rounded-md bg-white">
+    <div class="overflow-hidden rounded-md">
       <% Category::Group.for(categories).each_with_index do |group, idx| %>
         <%= render group.category %>
 
@@ -17,7 +17,7 @@
         <% end %>
 
         <% unless idx == Category::Group.for(categories).count - 1 %>
-          <%= render "shared/ruler" %>
+          <%= render "categories/ruler" %>
         <% end %>
       <% end %>
     </div>

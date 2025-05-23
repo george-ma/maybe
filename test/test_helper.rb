@@ -17,7 +17,6 @@ require "rails/test_help"
 require "minitest/mock"
 require "minitest/autorun"
 require "mocha/minitest"
-require "aasm/minitest"
 
 VCR.configure do |config|
   config.cassette_library_dir = "test/vcr_cassettes"
@@ -27,8 +26,6 @@ VCR.configure do |config|
   config.filter_sensitive_data("<SYNTH_API_KEY>") { ENV["SYNTH_API_KEY"] }
   config.filter_sensitive_data("<OPENAI_ACCESS_TOKEN>") { ENV["OPENAI_ACCESS_TOKEN"] }
   config.filter_sensitive_data("<OPENAI_ORGANIZATION_ID>") { ENV["OPENAI_ORGANIZATION_ID"] }
-  config.filter_sensitive_data("<STRIPE_SECRET_KEY>") { ENV["STRIPE_SECRET_KEY"] }
-  config.filter_sensitive_data("<STRIPE_WEBHOOK_SECRET>") { ENV["STRIPE_WEBHOOK_SECRET"] }
 end
 
 module ActiveSupport
@@ -52,7 +49,7 @@ module ActiveSupport
 
     # Add more helper methods to be used by all tests here...
     def sign_in(user)
-      post sessions_path, params: { email: user.email, password: user_password_test }
+      post sessions_path, params: { email: user.email, password: "password" }
     end
 
     def with_env_overrides(overrides = {}, &block)
@@ -62,10 +59,6 @@ module ActiveSupport
     def with_self_hosting
       Rails.configuration.stubs(:app_mode).returns("self_hosted".inquiry)
       yield
-    end
-
-    def user_password_test
-      "maybetestpassword817983172"
     end
   end
 end

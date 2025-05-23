@@ -1,6 +1,4 @@
 class Import < ApplicationRecord
-  MaxRowCountExceededError = Class.new(StandardError)
-
   TYPES = %w[TransactionImport TradeImport AccountImport MintImport].freeze
   SIGNAGE_CONVENTIONS = %w[inflows_positive inflows_negative]
   SEPARATORS = [ [ "Comma (,)", "," ], [ "Semicolon (;)", ";" ] ].freeze
@@ -11,8 +9,6 @@ class Import < ApplicationRecord
     "1 234,56" => { separator: ",", delimiter: " " },  # French/Scandinavian
     "1,234"    => { separator: "",  delimiter: "," }   # Zero-decimal currencies like JPY
   }.freeze
-
-  AMOUNT_TYPE_STRATEGIES = %w[signed_amount custom_column].freeze
 
   belongs_to :family
   belongs_to :account, optional: true
@@ -31,15 +27,14 @@ class Import < ApplicationRecord
   }, validate: true, default: "pending"
 
   validates :type, inclusion: { in: TYPES }
-  validates :amount_type_strategy, inclusion: { in: AMOUNT_TYPE_STRATEGIES }
   validates :col_sep, inclusion: { in: SEPARATORS.map(&:last) }
-  validates :signage_convention, inclusion: { in: SIGNAGE_CONVENTIONS }, allow_nil: true
+  validates :signage_convention, inclusion: { in: SIGNAGE_CONVENTIONS }
   validates :number_format, presence: true, inclusion: { in: NUMBER_FORMATS.keys }
 
   has_many :rows, dependent: :destroy
   has_many :mappings, dependent: :destroy
   has_many :accounts, dependent: :destroy
-  has_many :entries, dependent: :destroy
+  has_many :entries, dependent: :destroy, class_name: "Account::Entry"
 
   class << self
     def parse_csv_str(csv_str, col_sep: ",")
@@ -54,7 +49,6 @@ class Import < ApplicationRecord
   end
 
   def publish_later
-    raise MaxRowCountExceededError if row_count_exceeded?
     raise "Import is not publishable" unless publishable?
 
     update! status: :importing
@@ -63,11 +57,9 @@ class Import < ApplicationRecord
   end
 
   def publish
-    raise MaxRowCountExceededError if row_count_exceeded?
-
     import!
 
-    family.sync_later
+    family.sync
 
     update! status: :complete
   rescue => error
@@ -225,15 +217,7 @@ class Import < ApplicationRecord
     )
   end
 
-  def max_row_count
-    10000
-  end
-
   private
-    def row_count_exceeded?
-      rows.count > max_row_count
-    end
-
     def import!
       # no-op, subclasses can implement for customization of algorithm
     end

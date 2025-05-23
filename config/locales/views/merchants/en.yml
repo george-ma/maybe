@@ -1,6 +1,6 @@
 ---
 en:
-  family_merchants:
+  merchants:
     create:
       error: 'Error creating merchant: %{error}'
       success: New merchant created successfully

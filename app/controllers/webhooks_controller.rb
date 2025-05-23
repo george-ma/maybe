@@ -33,23 +33,61 @@ class WebhooksController < ApplicationController
   end
 
   def stripe
-    stripe_provider = Provider::Registry.get_provider(:stripe)
+    webhook_body = request.body.read
+    sig_header = request.env["HTTP_STRIPE_SIGNATURE"]
+    client = Stripe::StripeClient.new(ENV["STRIPE_SECRET_KEY"])
 
     begin
-      webhook_body = request.body.read
-      sig_header = request.env["HTTP_STRIPE_SIGNATURE"]
+      thin_event = client.parse_thin_event(webhook_body, sig_header, ENV["STRIPE_WEBHOOK_SECRET"])
 
-      stripe_provider.process_webhook_later(webhook_body, sig_header)
+      event = client.v1.events.retrieve(thin_event.id)
 
-      head :ok
+      case event.type
+      when /^customer\.subscription\./
+        handle_subscription_event(event)
+      when "customer.created", "customer.updated", "customer.deleted"
+        handle_customer_event(event)
+      else
+        Rails.logger.info "Unhandled event type: #{event.type}"
+      end
+
     rescue JSON::ParserError => error
       Sentry.capture_exception(error)
-      Rails.logger.error "JSON parser error: #{error.message}"
-      head :bad_request
+      render json: { error: "Invalid payload" }, status: :bad_request
+      return
     rescue Stripe::SignatureVerificationError => error
       Sentry.capture_exception(error)
-      Rails.logger.error "Stripe signature verification error: #{error.message}"
-      head :bad_request
+      render json: { error: "Invalid signature" }, status: :bad_request
+      return
     end
+
+    render json: { received: true }, status: :ok
   end
+
+  private
+
+    def handle_subscription_event(event)
+      subscription = event.data.object
+      family = Family.find_by(stripe_customer_id: subscription.customer)
+
+      if family
+        family.update(
+          stripe_plan_id: subscription.plan.id,
+          stripe_subscription_status: subscription.status
+        )
+      else
+        Rails.logger.error "Family not found for Stripe customer ID: #{subscription.customer}"
+      end
+    end
+
+    def handle_customer_event(event)
+      customer = event.data.object
+      family = Family.find_by(stripe_customer_id: customer.id)
+
+      if family
+        family.update(stripe_customer_id: customer.id)
+      else
+        Rails.logger.error "Family not found for Stripe customer ID: #{customer.id}"
+      end
+    end
 end

@@ -11,7 +11,6 @@ class PlaidInvestmentSync
     @securities = securities
 
     PlaidAccount.transaction do
-      normalize_cash_balance!
       sync_transactions!
       sync_holdings!
     end
@@ -19,23 +18,6 @@ class PlaidInvestmentSync
 
   private
     attr_reader :transactions, :holdings, :securities
-
-    # Plaid considers "brokerage cash" and "cash equivalent holdings" to all be part of "cash balance"
-    # Internally, we DO NOT.
-    # Maybe clearly distinguishes between "brokerage cash" vs. "holdings (i.e. invested cash)"
-    # For this reason, we must back out cash + cash equivalent holdings from the reported cash balance to avoid double counting
-    def normalize_cash_balance!
-      excludable_cash_holdings = holdings.select do |h|
-        internal_security, plaid_security = get_security(h.security_id, securities)
-        internal_security.present? && (plaid_security&.is_cash_equivalent || plaid_security&.type == "cash")
-      end
-
-      excludable_cash_holdings_value = excludable_cash_holdings.sum { |h| h.quantity * h.institution_price }
-
-      plaid_account.account.update!(
-        cash_balance: plaid_account.account.cash_balance - excludable_cash_holdings_value
-      )
-    end
 
     def sync_transactions!
       transactions.each do |transaction|
@@ -49,7 +31,7 @@ class PlaidInvestmentSync
             t.amount = transaction.amount
             t.currency = transaction.iso_currency_code
             t.date = transaction.date
-            t.entryable = Transaction.new
+            t.entryable = Account::Transaction.new
           end
         else
           new_transaction = plaid_account.account.entries.find_or_create_by!(plaid_id: transaction.investment_transaction_id) do |t|
@@ -57,7 +39,7 @@ class PlaidInvestmentSync
             t.amount = transaction.quantity * transaction.price
             t.currency = transaction.iso_currency_code
             t.date = transaction.date
-            t.entryable = Trade.new(
+            t.entryable = Account::Trade.new(
               security: security,
               qty: transaction.quantity,
               price: transaction.price,
@@ -106,8 +88,8 @@ class PlaidInvestmentSync
 
       # Find any matching security
       security = Security.find_or_create_by!(
-        ticker: plaid_security.ticker_symbol&.upcase,
-        exchange_operating_mic: operating_mic&.upcase
+        ticker: plaid_security.ticker_symbol,
+        exchange_operating_mic: operating_mic
       )
 
       [ security, plaid_security ]

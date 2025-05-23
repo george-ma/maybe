@@ -1,10 +1,10 @@
 require "test_helper"
 
-class EntryTest < ActiveSupport::TestCase
-  include EntriesTestHelper
+class Account::EntryTest < ActiveSupport::TestCase
+  include Account::EntriesTestHelper
 
   setup do
-    @entry = entries :transaction
+    @entry = account_entries :transaction
   end
 
   test "entry cannot be older than 10 years ago" do
@@ -14,10 +14,10 @@ class EntryTest < ActiveSupport::TestCase
   end
 
   test "valuations cannot have more than one entry per day" do
-    existing_valuation = entries :valuation
+    existing_valuation = account_entries :valuation
 
-    new_valuation = Entry.new \
-      entryable: Valuation.new,
+    new_valuation = Account::Entry.new \
+      entryable: Account::Valuation.new,
       account: existing_valuation.account,
       date: existing_valuation.date, # invalid
       currency: existing_valuation.currency,
@@ -30,7 +30,7 @@ class EntryTest < ActiveSupport::TestCase
     prior_date = @entry.date - 1
     @entry.update! date: prior_date
 
-    @entry.account.expects(:sync_later).with(window_start_date: prior_date)
+    @entry.account.expects(:sync_later).with(start_date: prior_date)
     @entry.sync_account_later
   end
 
@@ -38,14 +38,14 @@ class EntryTest < ActiveSupport::TestCase
     prior_date = @entry.date
     @entry.update! date: @entry.date + 1
 
-    @entry.account.expects(:sync_later).with(window_start_date: prior_date)
+    @entry.account.expects(:sync_later).with(start_date: prior_date)
     @entry.sync_account_later
   end
 
   test "triggers sync with correct start date when transaction deleted" do
     @entry.destroy!
 
-    @entry.account.expects(:sync_later).with(window_start_date: nil)
+    @entry.account.expects(:sync_later).with(start_date: nil)
     @entry.sync_account_later
   end
 
@@ -76,7 +76,7 @@ class EntryTest < ActiveSupport::TestCase
     accounts(:credit_card).update!(is_active: false)
 
     # Test the scope
-    active_entries = Entry.active
+    active_entries = Account::Entry.active
 
     # Should include entry from active account
     assert_includes active_entries, active_transaction

@@ -1,7 +1,7 @@
 require "test_helper"
 
 class IncomeStatementTest < ActiveSupport::TestCase
-  include EntriesTestHelper
+  include Account::EntriesTestHelper
 
   setup do
     @family = families(:empty)
